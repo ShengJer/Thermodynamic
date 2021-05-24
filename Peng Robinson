@@ -1,0 +1,103 @@
+# Peng Robinson equation of state for MATLAB code
+% output [fugacity coefficient; fugacity_bar]
+
+
+function output =  Pen_Pobmix_z_V(Tc_K, Pc_pa, acefac, kij, y1, T_K, P_pa)
+% initialize the array
+z = zeros(1, 2);
+aij = zeros(2, 2);
+term = zeros(1, 2);
+term_fugacity_gas = zeros(1, 2);
+term_fugacity_liquid = zeros(1, 2);
+
+y = [y1; 1-y1];
+R=8.314;
+k = 0.37464 + (1.54226 .* acefac) -( 0.26992 .* (acefac) .^ 2);
+alpha = (1 + k .* (1-sqrt(T_K ./ Tc_K))) .^ 2;
+a = (0.45724 .* (R)^2 .* (Tc_K) .^2 .* alpha) ./ Pc_pa;
+b = (0.07780 .* R .* Tc_K) ./ Pc_pa;
+bmix = sum(y' .* b);
+for i =1: length(Tc_K)
+    for j = 1:length(Tc_K)
+        aij(i, j) = sqrt(a(i) .* a(j)) .* (1 - kij(i, j));
+    end
+end
+for i = 1: length(Tc_K)
+    term(i) = sum(aij(:, i) .* y);
+end
+amix = sum(term .* y');
+Amix = amix .* (P_pa) ./ ((R).^ 2 .* (T_K).^ 2);
+Bmix = (P_pa) .* bmix ./ (R .* T_K);
+eqn = [1, -(1-Bmix), (Amix - 3*(Bmix).^2 - 2*Bmix), -(Amix*Bmix - (Bmix).^2 - (Bmix).^3)];
+zmix = roots(eqn);
+
+% fugacity parameter
+ Aij = (aij .* P_pa)  ./ (R.^2 .* (T_K).^2);
+ B = (P_pa .*b) ./ (R .* T_K);
+% calculate fugacity for vapor and liquid phase
+for i = 1: length(Tc_K)
+     term_fugacity_gas(i) = sum(Aij(i, :) .* y');
+end
+for i = 1: length(Tc_K)
+    term_fugacity_liquid(i) = sum(Aij(i, :) .* y');
+end
+
+% please extremely be careful about the syntax
+
+%------------------------------------------------- judge the phase of the
+%mixure
+if imag(zmix(1)) ==0 && imag(zmix(2)) ==0 && imag(zmix(3)) ==0
+    Vmix = zmix*R*T_k/P_pa;
+    digits(9);
+    Vmix = vpa(Vmix);
+    zmix_gas = max(zmix);
+    zmix_liquid = min(zmix);
+    Vmix_gas = max(Vmix);
+    Vmix_liquid = min(Vmix);
+    Vmix_gas = double(Vmix_gas);
+    Vmix_liquid = double(Vmix_liquid);
+    z(1) = zmix_gas;
+    z(2) = zmix_liquid;
+    lnphi_v = (B ./ (Bmix)) .* (z(1) -1) - log(z(1) - Bmix) - ((Amix ./(2.*sqrt(2).*Bmix)) .* ((2 .* term_fugacity_gas ./ Amix)-(B ./ Bmix)) .* log((z(1) + (1+sqrt(2)) .* Bmix) / (z(1) + (1-sqrt(2)) .* Bmix)));
+    lnphi_L = (B ./ (Bmix)) .* (z(2) -1) - log(z(2) - Bmix) - ((Amix ./(2.*sqrt(2).*Bmix)) .* ((2 .* term_fugacity_liquid ./ Amix)-(B ./ Bmix)) .* log((z(2) + (1+sqrt(2)) .* Bmix) / (z(2) + (1-sqrt(2)) .* Bmix)));
+    fi_v_bar = exp(lnphi_v) .* y' .* P_pa .*1e-05;
+    fi_L_bar = exp(lnphi_L) .* y' .* P_pa .*1e-05;
+    output = [lnphi_v, lnphi_L; fi_v_bar, fi_L_bar ];
+    disp('two phase')
+else
+    [zmix, flag] = extract_real(zmix);
+    if flag == 1
+        Vmix = zmix*R*T_K/P_pa;
+        digits(9);
+        Vmix = vpa(Vmix);
+        Vmix = double(Vmix);
+        z(1) =zmix;
+        z(2)= 0;
+        lnphi_v = (B ./ (Bmix)) .* (z(1) -1) - log(z(1) - Bmix) - ((Amix ./(2.*sqrt(2).*Bmix)) .* ((2 .* term_fugacity_gas ./ Amix)-(B ./ Bmix)) .* log((z(1) + (1+sqrt(2)) .* Bmix) / (z(1) + (1-sqrt(2)) .* Bmix)))
+        fi_v_bar = exp(lnphi_v) .* y' .* P_pa .*1e-05
+        output = [lnphi_v; fi_v_bar];
+    disp('vapor phase')
+    else 
+        Vmix = zmix*R*T_K/P_pa;
+        digits(9);
+        Vmix = vpa(Vmix);
+        Vmix = double(Vmix);
+        z(1) =0;
+        z(2)= zmix;
+        lnphi_L = (B ./ (Bmix)) .* (z(2) -1) - log(z(2) - Bmix) - ((Amix ./(2.*sqrt(2).*Bmix)) .* ((2 .* term_fugacity_liquid ./ Amix)-(B ./ Bmix)) .* log((z(2) + (1+sqrt(2)) .* Bmix) / (z(2) + (1-sqrt(2)) .* Bmix)));
+        fi_L_bar = exp(lnphi_L) .* y' .* P_pa .*1e-05;
+        disp('liquid phase')
+        output = [lnphi_L; fi_L_bar];
+    end
+end
+
+end
+function [res1, flag] = extract_real(zmix)
+        if imag(zmix(1)) ==0
+            res1 = zmix(1);
+            flag = 1;
+        else
+            res1 = zmix(3);
+            flag = 2;
+        end
+end
