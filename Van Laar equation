@@ -1,0 +1,170 @@
+% flag =1 : Antoine equation in natural log form with unit = bar
+% flag =2 : Antoine equation in log10 form with unit = bar
+% A1, B1, C1, A2, B2, C2 is the coefficient of Antoine equation
+% Patm_bar is the fixed pressure for phased diagram
+% x1 is the liquid composition
+% T_K_az and x1_az is the azotrope of the mixture
+function output = van_Laar_Pfix_matrix(A1, B1, C1, A2, B2, C2, flag, Patm_bar, x1, T_K_az, x1_az)
+check_element = checkfirst_final(x1);
+if check_element ==1
+    A = A1;
+    B = B1;
+    C = C1;
+    T_K = Antoine_pure(A, B, C, flag, Patm_bar);
+    figure(1)
+    plot(x1(length(x1)), T_K, 'b.')
+    hold on
+    A = A2;
+    B = B2;
+    C = C2;
+    T_K = Antoine_pure(A, B, C, flag, Patm_bar);
+    plot(x1(1), T_K, 'b.')
+    sub1 = x1 ~= 0;
+    x1 = x1(sub1);
+    sub2 = x1 ~=1;
+    x1 = x1(sub2);
+    figure(2)
+    plot(0,0, 'b.', 1,1, 'b.');
+    hold on
+elseif check_element ==2
+    A = A2;
+    B = B2;
+    C = C2;
+    T_K = Antoine_pure(A, B, C, flag, Patm_bar);
+    figure(1)
+    plot(x1(1), T_K, 'b.')
+    hold on
+    sub1 = x1 ~= 0;
+    x1 = x1(sub1);
+elseif check_element ==3
+    A = A1;
+    B = B1;
+    C = C1;
+    T_K = Antoine_pure(A, B, C, flag, Patm_bar);
+    figure(1)
+    plot(x1(length(x1)), T_K, 'b.')
+    hold on
+    sub2 = x1 ~=1;
+    x1 = x1(sub2);
+elseif check_element ==4
+end
+x2 = 1 - x1;
+x2_az = 1 - x1_az;
+T_K = 0;
+flag_check = 1;
+i = 0;
+output = zeros(3, length(x1)-1);
+Pvap_bar_az = Antoine(A1, B1, C1, A2, B2, C2, flag, T_K_az);
+gamma1_az = Patm_bar ./ Pvap_bar_az(1);
+gamma2_az = Patm_bar ./ Pvap_bar_az(2);
+alpha = (1+((x2_az .* log(gamma2_az)) ./(x1_az .* log(gamma1_az)))).^2 .* log(gamma1_az);
+beta = (1+((x1_az .* log(gamma1_az)) ./(x2_az .* log(gamma2_az)))).^2 .* log(gamma2_az);
+while flag_check ==1
+    Pvap_bar = Antoine(A1, B1, C1, A2, B2, C2, flag, T_K); 
+    lngamma1 = alpha ./ (1+(alpha ./ beta).*(x1 ./ x2)).^2;
+    lngamma2 = beta ./ (1+(beta ./ alpha).*(x2 ./ x1)).^2;
+    gamma1 = exp(lngamma1);
+    gamma2 = exp(lngamma2);
+    check = x1 .* gamma1 .* Pvap_bar(1) + x2 .* gamma2 .* Pvap_bar(2) - Patm_bar;
+    % create logic vector
+    logic1 = abs(check) > 0.001;
+    logic2 = abs(check) <= 0.001;
+    % identify the position of true and false
+    logic_T_index = find(logic1);
+    logic_F_index = find(logic2);
+    if length(logic_T_index) == length(check)
+        T_K = T_K +0.001;
+    elseif length(logic_T_index) < length(check) &&  length(logic_T_index) ~=0
+        %find the elements that are smaller or equail to 0.001
+        x1_finish= x1(logic2);
+        x2_finish= 1- x1_finish;
+        % make the dimension of matrix the same
+        lngamma1 = alpha ./ (1+(alpha ./ beta).*(x1_finish ./ x2_finish)).^2;
+        gamma1 = exp(lngamma1);
+        T_K_finish = T_K;
+        y1 = x1_finish .* gamma1 .* Pvap_bar(1) ./  Patm_bar;
+        % output the available data : initialize matrix dimension and index
+        % growth
+        x1_dimension = length(x1_finish);
+        if x1_dimension ==1
+            i = i+1;
+            output(:, i) = [x1_finish; y1; T_K_finish ];
+        elseif x1_dimension ~=1
+            % repeat the value and change the dimention of T_K matrix
+            T_K_finish = repmat(T_K_finish, 1, x1_dimension);
+            output(:, i+1 : i+x1_dimension) = [x1_finish; y1; T_K_finish ];
+            i = i +x1_dimension;
+        end
+        % reset the matrix
+        x1 = x1(logic1);
+        x2 = 1-x1;
+        T_K = T_K + 0.001;
+    elseif  isempty(logic_T_index)
+        flag_check =0;
+    end
+end
+% plot the last element lefting in the matrix 
+y1 = x1 .* gamma1 .* Pvap_bar(1) ./  Patm_bar;
+figure(1)
+plot(x1, T_K, 'b.',  y1, T_K, 'k.' )
+hold on
+% plot the data storing in "output" matrix
+plot(output(1, :),  output(3, :), 'b.', output(2, :),  output(3, :), 'k.')
+xlabel('x1')
+ylabel('temperature(K)')
+title('liquid composition v.s. equilibrium temperature')
+% plot the last element lefting in the matrix 
+figure(2)
+plot(x1, y1, 'b.')
+u = linspace(0,1);
+v = u;
+plot(u, v, 'r--')
+hold on
+% plot the data storing in "output" matrix
+plot(output(1, :), output(2, :), 'b.')
+xlabel('x1')
+ylabel('y1')
+title('x1 v.s. y1')
+end
+
+function Pvap_bar = Antoine(A1, B1, C1, A2, B2, C2, flag, T_K)
+if flag == 1
+    lnP1vap_bar = A1 - B1 ./ (T_K + C1);
+    lnP2vap_bar = A2 - B2 ./ (T_K + C2);
+    Pvap_bar(1) = exp(lnP1vap_bar);
+    Pvap_bar(2) = exp(lnP2vap_bar);
+elseif flag == 2
+    logP1vap_bar = A1 - B1 ./ (T_K + C1);
+    logP2vap_bar = A2 - B2 ./ (T_K + C2);
+    Pvap_bar(1) = 10.^(logP1vap_bar);
+    Pvap_bar(2) = 10.^(logP2vap_bar);
+else
+    disp('wrong flag')
+end
+end
+
+function res = Antoine_pure(A, B, C, flag, Patm_bar)
+if flag == 1
+    T_K = (B ./ (A- log(Patm_bar))) - C;
+    res = T_K;
+elseif flag == 2
+    T_K = (B ./ (A- log10(Patm_bar))) - C;
+    res = T_K;
+else
+    disp('wrong flag')
+end
+end
+
+function res = checkfirst_final(x1)
+first_element = x1(1);
+final_element = x1(length(x1));
+if first_element ==0 && final_element ==1
+    res = 1;
+elseif first_element ==0 && final_element ~=1
+    res =2;
+elseif first_element ~=0 && final_element ==1
+    res =3;
+else
+    res =4;
+end
+end
